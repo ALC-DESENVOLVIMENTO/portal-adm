@@ -186,6 +186,8 @@ const BENEFICIARY_NAME_FIELDS = [
 const BENEFICIARY_CNPJ_FIELDS = [
   "cnpj_favorecido",
   "cnpj_do_favorecido",
+  "CNPJ do favorecido",
+  "CPF/CNPJ do favorecido",
   "favorecido_cnpj",
   "beneficiary_cnpj",
   "mei",
