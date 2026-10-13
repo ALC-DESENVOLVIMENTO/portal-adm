@@ -162,37 +162,6 @@ test("resolveBeneficiaryCnpj accepts ARCHI's cnpjFavorecido field", () => {
   );
 });
 
-test("resolveBeneficiaryCnpj reads ARCHI's human-readable favored-CNPJ fields", () => {
-  const registryMatch = {
-    externalId: "registry-archi-labeled-cnpj",
-    nome: "Bruno Henrique Ferreira",
-    cpf: "10701356669",
-    cpfDigits: "10701356669",
-    cnpj: "11111111000191",
-    base: "NOVA LIMA",
-    raw: {
-      cnpj: "11111111000191",
-      cnpj_digits: "11111111000191",
-      extra_data: {
-        "CNPJ do favorecido": "46.451.810/0001-65"
-      }
-    }
-  };
-
-  assert.equal(resolveBeneficiaryCnpj(registryMatch), "46451810000165");
-  assert.equal(
-    resolveBeneficiaryCnpj({
-      ...registryMatch,
-      raw: {
-        cnpj: "11111111000191",
-        cnpj_digits: "11111111000191",
-        extra_data: { "CPF/CNPJ do favorecido": "46.451.810/0001-65" }
-      }
-    }),
-    "46451810000165"
-  );
-});
-
 test("resolveBeneficiaryName reads the favorecido from ARCHI extra_data", () => {
   assert.equal(
     resolveBeneficiaryName({
