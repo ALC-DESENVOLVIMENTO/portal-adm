@@ -1246,7 +1246,8 @@ router.post("/:id/replace", upload.single("file"), (req, res) => {
         basePagamentoId: true,
         motorista: {
           select: {
-            nome: true
+            nome: true,
+            cpf: true
           }
         },
         periodoPagamento: {
@@ -1312,10 +1313,12 @@ router.post("/:id/replace", upload.single("file"), (req, res) => {
     const currentCnpj = currentUpload.motoristaCnpjExtraido?.replace(/\D/g, "") || "";
     const hasComparableCnpj = Boolean(replacementCnpj && currentCnpj);
     const cpfConfirmation = digitsOnly(String(req.body?.motoristaCpf || ""));
+    const currentMotoristaCpf = digitsOnly(String(currentUpload.motorista?.cpf || ""));
+    const celsoCpf = cpfConfirmation || currentMotoristaCpf;
     const oneOffCelsoHistoricalCnpj =
       file.originalname === "CELSO ANTONIO DA SILVA_10-10-26.pdf" &&
       replacementName === normalizeText("CELSO ANTONIO DA SILVA") &&
-      cpfConfirmation === "31620830876" &&
+      celsoCpf === "31620830876" &&
       replacementCnpj === "69545432000184" &&
       normalizeText(currentUpload.basePagamento?.nome || "") === normalizeText("ARACATUBA");
     if (
@@ -1336,14 +1339,14 @@ router.post("/:id/replace", upload.single("file"), (req, res) => {
     let replacementMatch = await resolveDriverRegistryByIdentity({
       name: replacementMetadata.identity?.name || undefined,
       cnpj: replacementCnpj || undefined,
-      cpf: cpfConfirmation || undefined,
+      cpf: celsoCpf || undefined,
       uploadIdentity: true,
       base: currentUpload.basePagamento?.nome || undefined
     });
     if (oneOffCelsoHistoricalCnpj && !replacementMatch) {
       replacementMatch = await resolveDriverRegistryByIdentity({
         name: replacementMetadata.identity?.name || undefined,
-        cpf: cpfConfirmation || undefined,
+        cpf: celsoCpf || undefined,
         uploadIdentity: true,
         base: currentUpload.basePagamento?.nome || undefined
       });
@@ -1375,7 +1378,7 @@ router.post("/:id/replace", upload.single("file"), (req, res) => {
       });
       return;
     }
-    const replacementCpf = cpfConfirmation;
+    const replacementCpf = celsoCpf;
     const archiCpf = digitsOnly(replacementMatch.cpfDigits || replacementMatch.cpf || "");
     if (replacementCpf && archiCpf && replacementCpf !== archiCpf) {
       res.status(422).json({
