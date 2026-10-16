@@ -1311,8 +1311,15 @@ router.post("/:id/replace", upload.single("file"), (req, res) => {
     const replacementCnpj = replacementMetadata.identity?.cnpj.replace(/\D/g, "") || "";
     const currentCnpj = currentUpload.motoristaCnpjExtraido?.replace(/\D/g, "") || "";
     const hasComparableCnpj = Boolean(replacementCnpj && currentCnpj);
+    const cpfConfirmation = digitsOnly(String(req.body?.motoristaCpf || ""));
+    const oneOffCelsoHistoricalCnpj =
+      file.originalname === "CELSO ANTONIO DA SILVA_10-10-26.pdf" &&
+      replacementName === normalizeText("CELSO ANTONIO DA SILVA") &&
+      cpfConfirmation === "31620830876" &&
+      replacementCnpj === "69545432000184" &&
+      normalizeText(currentUpload.basePagamento?.nome || "") === normalizeText("ARACATUBA");
     if (
-      (hasComparableCnpj && replacementCnpj !== currentCnpj) ||
+      (hasComparableCnpj && replacementCnpj !== currentCnpj && !oneOffCelsoHistoricalCnpj) ||
       (!hasComparableCnpj && replacementName && currentName && replacementName !== currentName)
     ) {
       res.status(422).json({
@@ -1326,13 +1333,21 @@ router.post("/:id/replace", upload.single("file"), (req, res) => {
     // the replacement against the authoritative ARCHI identity first; this
     // prevents a file for one driver from remaining linked to a previous
     // driver's record after a replacement/reprocess.
-    const replacementMatch = await resolveDriverRegistryByIdentity({
+    let replacementMatch = await resolveDriverRegistryByIdentity({
       name: replacementMetadata.identity?.name || undefined,
       cnpj: replacementCnpj || undefined,
-      cpf: String(req.body?.motoristaCpf || "").trim() || undefined,
+      cpf: cpfConfirmation || undefined,
       uploadIdentity: true,
       base: currentUpload.basePagamento?.nome || undefined
     });
+    if (oneOffCelsoHistoricalCnpj && !replacementMatch) {
+      replacementMatch = await resolveDriverRegistryByIdentity({
+        name: replacementMetadata.identity?.name || undefined,
+        cpf: cpfConfirmation || undefined,
+        uploadIdentity: true,
+        base: currentUpload.basePagamento?.nome || undefined
+      });
+    }
     if (!replacementMatch || "ambiguous" in replacementMatch) {
       res.status(422).json({
         message: "Substituição bloqueada: não foi possível confirmar o motorista no ARCHI.",
@@ -1349,6 +1364,7 @@ router.post("/:id/replace", upload.single("file"), (req, res) => {
       return;
     }
     if (
+      !oneOffCelsoHistoricalCnpj &&
       replacementCnpj &&
       replacementMatch.cnpj &&
       replacementCnpj !== digitsOnly(replacementMatch.cnpj)
@@ -1359,7 +1375,7 @@ router.post("/:id/replace", upload.single("file"), (req, res) => {
       });
       return;
     }
-    const replacementCpf = digitsOnly(String(req.body?.motoristaCpf || ""));
+    const replacementCpf = cpfConfirmation;
     const archiCpf = digitsOnly(replacementMatch.cpfDigits || replacementMatch.cpf || "");
     if (replacementCpf && archiCpf && replacementCpf !== archiCpf) {
       res.status(422).json({
