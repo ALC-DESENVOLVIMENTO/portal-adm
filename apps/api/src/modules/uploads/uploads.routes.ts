@@ -1311,18 +1311,9 @@ router.post("/:id/replace", upload.single("file"), (req, res) => {
     const replacementCnpj = replacementMetadata.identity?.cnpj.replace(/\D/g, "") || "";
     const currentCnpj = currentUpload.motoristaCnpjExtraido?.replace(/\D/g, "") || "";
     const hasComparableCnpj = Boolean(replacementCnpj && currentCnpj);
-    const sameNamedDriver = Boolean(replacementName && currentName && replacementName === currentName);
-    const cpfConfirmation = digitsOnly(String(req.body?.motoristaCpf || ""));
-    // A driver may have a valid historical mirror under the previous favored
-    // CNPJ after the company data is updated. Keep the current CNPJ on the
-    // record, but allow replacement when the name and confirmed driver CPF
-    // still identify the same person.
-    const historicalCnpjCandidate = Boolean(
-      hasComparableCnpj && replacementCnpj !== currentCnpj && sameNamedDriver && cpfConfirmation
-    );
     if (
-      ((hasComparableCnpj && replacementCnpj !== currentCnpj && !historicalCnpjCandidate) ||
-      (!hasComparableCnpj && replacementName && currentName && replacementName !== currentName))
+      (hasComparableCnpj && replacementCnpj !== currentCnpj) ||
+      (!hasComparableCnpj && replacementName && currentName && replacementName !== currentName)
     ) {
       res.status(422).json({
         message: "Substituição bloqueada: o novo espelho pertence a outro motorista ou favorecido.",
@@ -1335,22 +1326,13 @@ router.post("/:id/replace", upload.single("file"), (req, res) => {
     // the replacement against the authoritative ARCHI identity first; this
     // prevents a file for one driver from remaining linked to a previous
     // driver's record after a replacement/reprocess.
-    let replacementMatch = await resolveDriverRegistryByIdentity({
+    const replacementMatch = await resolveDriverRegistryByIdentity({
       name: replacementMetadata.identity?.name || undefined,
       cnpj: replacementCnpj || undefined,
-      cpf: cpfConfirmation || undefined,
+      cpf: String(req.body?.motoristaCpf || "").trim() || undefined,
       uploadIdentity: true,
       base: currentUpload.basePagamento?.nome || undefined
     });
-    if ((historicalCnpjCandidate && !replacementMatch) ||
-      (historicalCnpjCandidate && replacementMatch && "ambiguous" in replacementMatch)) {
-      replacementMatch = await resolveDriverRegistryByIdentity({
-        name: replacementMetadata.identity?.name || undefined,
-        cpf: cpfConfirmation || undefined,
-        uploadIdentity: true,
-        base: currentUpload.basePagamento?.nome || undefined
-      });
-    }
     if (!replacementMatch || "ambiguous" in replacementMatch) {
       res.status(422).json({
         message: "Substituição bloqueada: não foi possível confirmar o motorista no ARCHI.",
@@ -1367,7 +1349,6 @@ router.post("/:id/replace", upload.single("file"), (req, res) => {
       return;
     }
     if (
-      !historicalCnpjCandidate &&
       replacementCnpj &&
       replacementMatch.cnpj &&
       replacementCnpj !== digitsOnly(replacementMatch.cnpj)
@@ -1378,7 +1359,7 @@ router.post("/:id/replace", upload.single("file"), (req, res) => {
       });
       return;
     }
-    const replacementCpf = cpfConfirmation;
+    const replacementCpf = digitsOnly(String(req.body?.motoristaCpf || ""));
     const archiCpf = digitsOnly(replacementMatch.cpfDigits || replacementMatch.cpf || "");
     if (replacementCpf && archiCpf && replacementCpf !== archiCpf) {
       res.status(422).json({
