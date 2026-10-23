@@ -1,3 +1,4 @@
+import { driverRegistrySourceProjection } from "./driver-registry-source-sql.js";
 import { prisma } from "./prisma.js";
 
 const DRIVER_REGISTRY_TABLE = "driver_registry_entities";
@@ -130,10 +131,10 @@ export async function ensureArchiDriverSourceViews() {
 
   await prisma.$executeRawUnsafe(`
     CREATE OR REPLACE VIEW public.driver_registry_effective AS
-    SELECT approved.*, 'archi'::text AS _source
+    SELECT ${driverRegistrySourceProjection('approved')}, 'archi'::text AS _source
     FROM public.archi_motoristas_aprovados approved
     UNION ALL
-    SELECT legacy_current.*, 'legacy'::text AS _source
+    SELECT ${driverRegistrySourceProjection('legacy_current')}, 'legacy'::text AS _source
     FROM (
       SELECT DISTINCT ON (legacy.cpf_digits) legacy.*
       FROM public.driver_registry_entities legacy
