@@ -27,6 +27,7 @@ async function runPendingUploadReconciliation() {
 
 app.listen(port, () => {
   console.log(`Portal Administrativo API online na porta ${port}`);
+  if (process.env.BACKGROUND_JOBS_ENABLED === "false") return;
   void runPendingUploadReconciliation();
 
   const reconciliationTimer = setInterval(

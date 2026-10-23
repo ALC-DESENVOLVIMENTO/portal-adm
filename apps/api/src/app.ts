@@ -148,7 +148,7 @@ export function createApp() {
 
   const webDistPath = path.resolve(process.cwd(), "../web/dist");
 
-  if (existsSync(webDistPath)) {
+  if (process.env.APP_ROLE !== "api" && existsSync(webDistPath)) {
     app.use(express.static(webDistPath));
 
     app.get("*", (req, res, next) => {
