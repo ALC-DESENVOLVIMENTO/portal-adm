@@ -113,7 +113,9 @@ export function createApp() {
       credentials: true
     })
   );
-  app.use(express.json({ limit: "1mb" }));
+  app.use(express.json({ limit: "1mb", verify: (req, _res, buffer) => {
+    (req as typeof req & { rawWebhookBody?: Buffer }).rawWebhookBody = Buffer.from(buffer);
+  } }));
   app.use(express.urlencoded({ extended: false, limit: "1mb" }));
 
   // Apply limits before any API route is evaluated. Keeping these after the

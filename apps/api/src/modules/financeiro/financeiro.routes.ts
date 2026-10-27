@@ -6,6 +6,7 @@ import multer from "multer";
 import { z } from "zod";
 import { requireAuth, requireModuleAccess, requirePermission } from "../../middlewares/auth.middleware.js";
 import { prisma } from "../../lib/prisma.js";
+import { listInvoiceDeliveryAlerts } from "../../lib/invoice-delivery.js";
 import { buildStorageObjectUrl, createStorageKey, fetchObjectBuffer, isPaymentMirrorStorageKey, uploadObject } from "../../lib/storage.js";
 import { loadDriverPdfReceivedContent } from "../../lib/driver-pdf-received-content.js";
 import {
@@ -75,6 +76,30 @@ const manualNotaFiscalUpload = multer({
 });
 
 router.use(requireAuth, requireModuleAccess("financeiro"));
+
+router.get('/invoice-delivery-alerts',(req,res)=>{
+  void(async()=>{
+    const filters=z.object({periodId:z.string().uuid().optional(),baseId:z.string().uuid().optional()}).safeParse(req.query);
+    if(!filters.success){res.status(400).json({message:'Período ou base inválidos.'});return;}
+    res.json(await listInvoiceDeliveryAlerts(filters.data.periodId || null,filters.data.baseId || null));
+  })().catch(()=>res.status(503).json({message:'Não foi possível consultar falhas de envio de notas. Tente novamente.'}));
+});
+
+router.get('/invoice-delivery-attempts/:id/content',requirePermission('financeiro.nota.approve'),(req,res)=>{
+  void(async()=>{
+    const id=z.string().uuid().safeParse(req.params.id);
+    if(!id.success){res.status(400).json({message:'Protocolo inválido.'});return;}
+    const rows=await prisma.$queryRaw<Array<{archive_storage_key:string|null;archive_content:Buffer|null}>>`
+      SELECT archive_storage_key,archive_content FROM portal_administrativo.invoice_delivery_attempts WHERE id=${id.data}::uuid`;
+    const key=rows[0]?.archive_storage_key;
+    const body=rows[0]?.archive_content || (key?.startsWith('invoice-attempts/')?(await fetchObjectBuffer(key))?.body:null);
+    if(!body){res.status(404).json({message:'Arquivo da tentativa indisponível.'});return;}
+    res.setHeader('Content-Type','application/pdf');
+    res.setHeader('Content-Disposition',`attachment; filename="tentativa-${id.data}.pdf"`);
+    res.setHeader('Cache-Control','private, no-store');
+    res.send(body);
+  })().catch(()=>res.status(503).json({message:'Não foi possível recuperar o arquivo da tentativa.'}));
+});
 
 const listFiltersSchema = z.object({
   periodId: z.string().uuid().optional(),

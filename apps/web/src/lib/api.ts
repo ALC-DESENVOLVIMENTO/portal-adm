@@ -966,6 +966,15 @@ export function fetchFinanceiroSummary(token: string) {
   });
 }
 
+export type InvoiceDeliveryAlert={id:string;sourceUploadId:string;driver:string;period:string;base:string;kind:string;errorCode:string|null;attempts:number;updatedAt:string;hasArchive:boolean};
+export function fetchInvoiceDeliveryAlerts(token:string,periodId:string,baseId:string|null) {
+  const query=new URLSearchParams({periodId,...(baseId?{baseId}:{})});
+  return request<{trackingAvailable:boolean;total:number;alerts:InvoiceDeliveryAlert[]}>(`/financeiro/invoice-delivery-alerts?${query}`,{headers:{Authorization:`Bearer ${token}`}});
+}
+export function downloadInvoiceDeliveryAttempt(token:string,id:string) {
+  return requestBlob(`/financeiro/invoice-delivery-attempts/${encodeURIComponent(id)}/content`,token);
+}
+
 export function fetchFinanceiroBases(token: string, periodId: string) {
   return request<FinanceiroBaseCard[]>(`/financeiro/periods/${periodId}/bases`, {
     headers: {

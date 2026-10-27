@@ -31,6 +31,9 @@ import {
   uploadFinanceiroNotaFiscalManual,
   fetchFinanceiroMotoristas,
   fetchFinanceiroSummary,
+  fetchInvoiceDeliveryAlerts,
+  downloadInvoiceDeliveryAttempt,
+  type InvoiceDeliveryAlert,
   exportFinanceiroNotasFiscais,
   exportFinanceiroNotasFiscaisExcel,
   previewFinanceiroImport,
@@ -306,6 +309,29 @@ export function FinanceiroScreen({
   const [selectedImportFile, setSelectedImportFile] = useState<File | null>(null);
   const [selectedPeriodId, setSelectedPeriodId] = useState(() => readFinanceViewState().periodId || "");
   const [selectedBaseId, setSelectedBaseId] = useState(() => readFinanceViewState().baseId || "all");
+  const [invoiceAlerts,setInvoiceAlerts]=useState<InvoiceDeliveryAlert[]>([]);
+  const [invoiceAlertTotal,setInvoiceAlertTotal]=useState(0);
+  const [invoiceAlertError,setInvoiceAlertError]=useState('');
+  const [invoiceAlertBusy,setInvoiceAlertBusy]=useState(false);
+  useEffect(()=>{
+    if(!canAccess || !selectedPeriodId) return;
+    let active=true;
+    const load=async()=>{
+      try {
+        const result=await fetchInvoiceDeliveryAlerts(token,selectedPeriodId,selectedBaseId==='all'?null:selectedBaseId);
+        if(active){setInvoiceAlerts(result.alerts);setInvoiceAlertTotal(result.total);setInvoiceAlertError(result.trackingAvailable?'':'O acompanhamento detalhado de novas tentativas ainda não está disponível.');}
+      } catch(error){if(active)setInvoiceAlertError(error instanceof Error?error.message:'Falha ao consultar envios de notas.');}
+      finally {if(active)setInvoiceAlertBusy(false);}
+    };
+    setInvoiceAlerts([]);setInvoiceAlertTotal(0);setInvoiceAlertBusy(true);setInvoiceAlertError('');void load();
+    const interval=window.setInterval(()=>{void load();},30000);
+    return()=>{active=false;window.clearInterval(interval);};
+  },[token,canAccess,selectedPeriodId,selectedBaseId]);
+  const downloadAttempt=async(id:string)=>{
+    try {const {blob}=await downloadInvoiceDeliveryAttempt(token,id);const url=URL.createObjectURL(blob);
+      const link=document.createElement('a');link.href=url;link.download=`tentativa-${id}.pdf`;link.click();window.setTimeout(()=>URL.revokeObjectURL(url),1500);
+    }catch(error){setInvoiceAlertError(error instanceof Error?error.message:'Arquivo indisponível.');}
+  };
   const [periodViewTab, setPeriodViewTab] = useState<"bases" | "motoristas">(() => readFinanceViewState().periodViewTab || "bases");
   const [baseSearchTerm, setBaseSearchTerm] = useState("");
   const [financeTab, setFinanceTab] = useState<FinanceTab>(() => readFinanceViewState().tab || "exportacao");
@@ -1385,6 +1411,20 @@ export function FinanceiroScreen({
                 <p>Filtre por motoristas e acompanhe o status da nota fiscal em tempo real.</p>
               </div>
             </div>
+
+            <section className="finance-invoice-alerts" aria-label="Acompanhamento do envio de notas">
+              <h4>Envios de notas com pendência {invoiceAlertTotal>0?`(${invoiceAlertTotal})`:''}</h4>
+              {invoiceAlertBusy && <p role="status">Conferindo tentativas de envio...</p>}
+              {invoiceAlertError && <p role="alert">{invoiceAlertError}</p>}
+              {!invoiceAlertBusy && !invoiceAlertError && invoiceAlerts.length===0 && <p>Nenhuma falha registrada para este período e base.</p>}
+              {invoiceAlerts.length>0 && <><p>Estas ocorrências precisam de conferência. Uma tentativa de envio não representa aprovação da nota.</p>
+                <div className="table-wrap" tabIndex={0} role="region" aria-label="Ocorrências de envio de notas"><table className="data-table"><thead><tr><th>Motorista</th><th>Base</th><th>Pendência</th><th>Tentativas</th><th>Último registro</th><th>Arquivo</th></tr></thead>
+                <tbody>{invoiceAlerts.map(alert=><tr key={alert.id}><td>{alert.driver}<br/><small>{alert.period}</small></td><td>{alert.base}</td>
+                  <td>{alert.kind==='integration'?'Comunicação com o Administrativo pendente':alert.kind==='storage'?'Nota registrada no banco; cópia no armazenamento pendente':alert.kind==='scope'?'Nota registrada sem vínculo completo; conferir histórico':alert.kind==='historical'?'Erro anterior de envio; nota não localizada':alert.kind==='preview'?'Pré-validação falhou; nota não localizada':'Envio ou validação não concluído'}<br/><small>Protocolo: {alert.id}</small></td>
+                  <td>{alert.attempts}</td><td>{new Date(alert.updatedAt).toLocaleString('pt-BR')}</td><td>{alert.hasArchive && (currentUser?.level==='N3'||currentUser?.level==='N4'||currentUser?.permissions.includes('financeiro.nota.approve'))
+                    ?<button type="button" className="ghost-button ghost-button--small" onClick={()=>void downloadAttempt(alert.id)}>Baixar tentativa</button>:alert.hasArchive?'Arquivo preservado':'Sem arquivo recebido'}</td></tr>)}</tbody></table></div>
+                {invoiceAlertTotal>invoiceAlerts.length && <p>Mostrando as {invoiceAlerts.length} ocorrências mais recentes. Total: {invoiceAlertTotal}.</p>}</>}
+            </section>
 
             {selectedBase || selectedBaseId === "all" ? (
               <div className="finance-period-hero finance-period-hero--compact">

@@ -1,8 +1,10 @@
 import { Router, type Request, type Response } from "express";
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash } from "node:crypto";
 import { DriverPdfReceivedStatus } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
+import { acceptPersistedInvoice } from "../../lib/invoice-delivery.js";
+import { webhookCredentials, constantTimeTokenEqual, validWebhookSignature, type WebhookChannel } from "../../lib/webhook-auth.js";
 import {
   markDriverPdfReceivedRejected,
   markDriverPdfReceivedViewed,
@@ -61,17 +63,12 @@ function readWebhookToken(req: Request) {
   ).trim();
 }
 
-function resolveExpectedToken() {
-  return String(
-    process.env.ACCESS_ADM_WEBHOOK_TOKEN ||
-      process.env.PDFONLINE_BRIDGE_TOKEN ||
-      process.env.PDFONLINE_WEBHOOK_TOKEN ||
-      ""
-  ).trim();
+function resolveExpectedToken(channel: WebhookChannel = 'archi') {
+  return webhookCredentials(channel).token;
 }
 
-function isAuthorized(req: Request) {
-  const expectedToken = resolveExpectedToken();
+function isAuthorized(req: Request, channel: WebhookChannel = 'archi') {
+  const expectedToken = resolveExpectedToken(channel);
 
   if (!expectedToken) {
     // Never leave a production webhook publicly writable.
@@ -79,27 +76,12 @@ function isAuthorized(req: Request) {
   }
 
   const providedToken = readWebhookToken(req);
-  return providedToken.length === expectedToken.length && timingSafeEqual(Buffer.from(providedToken), Buffer.from(expectedToken));
+  return constantTimeTokenEqual(providedToken, expectedToken);
 }
 
-function isValidWebhookSignature(req: Request) {
-  const secret = String(
-    process.env.ACCESS_ADM_WEBHOOK_SECRET || process.env.PDFONLINE_WEBHOOK_SECRET || ""
-  ).trim();
-
-  if (!secret) {
-    return true;
-  }
-
-  const provided = String(req.headers["x-webhook-signature"] || "").trim().replace(/^sha256=/i, "");
-  const body = JSON.stringify(req.body ?? {});
-  const expected = createHmac("sha256", secret).update(body).digest("hex");
-
-  if (!provided || provided.length !== expected.length) {
-    return false;
-  }
-
-  return timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
+function isValidWebhookSignature(req: Request, channel: WebhookChannel = 'archi') {
+  const body = (req as Request & { rawWebhookBody?: Buffer }).rawWebhookBody || JSON.stringify(req.body ?? {});
+  return validWebhookSignature(body, String(req.headers['x-webhook-signature'] || ''), webhookCredentials(channel).secret);
 }
 
 function isArchiDriverEvent(event: string) {
@@ -440,7 +422,7 @@ async function processSefazCheckedWebhook(req: Request, data: Record<string, unk
 }
 
 async function handleDirectSefazRoute(req: Request, res: Response) {
-  if (!isAuthorized(req) || !isValidWebhookSignature(req)) {
+  if (!isAuthorized(req, 'pdfonline') || !isValidWebhookSignature(req, 'pdfonline')) {
     res.status(401).json({ message: "Webhook nao autorizado." });
     return;
   }
@@ -471,14 +453,15 @@ router.post("/invoice/sefaz-checked", (req, res) => {
 
 router.post("/access-adm", (req, res) => {
   void (async () => {
-    if (!isAuthorized(req)) {
+    const channel: WebhookChannel = String(req.body?.event || '').toLowerCase().startsWith('portal.') ? 'pdfonline' : 'archi';
+    if (!isAuthorized(req, channel)) {
       res.status(401).json({
         message: "Webhook nao autorizado."
       });
       return;
     }
 
-    if (!isValidWebhookSignature(req)) {
+    if (!isValidWebhookSignature(req, channel)) {
       res.status(401).json({
         message: "Assinatura do webhook invalida."
       });
@@ -511,6 +494,14 @@ router.post("/access-adm", (req, res) => {
         receivedId: result.receivedId,
         validation: result.validation || null
       });
+      return;
+    }
+
+    if(event.toLowerCase()==='portal.invoice.created') {
+      const uploadId=z.string().uuid().safeParse(readString(data.uploadId || data.uploadPdfId));
+      if(!uploadId.success) {res.status(422).json({message:'Nota fiscal sem identificador válido.'});return;}
+      const received=await acceptPersistedInvoice(uploadId.data);
+      res.status(200).json(received);
       return;
     }
 

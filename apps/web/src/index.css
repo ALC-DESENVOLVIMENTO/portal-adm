@@ -5744,3 +5744,13 @@ body.theme-dark :where(.filter-select svg, .field:has(select) svg) {
 .finance-issue-item > small { color: var(--muted, #64748b); font-size: .72rem; line-height: 1.45; }
 .finance-issue-item--warning { border-color: rgba(234, 145, 0, .25); background: rgba(234, 145, 0, .06); }
 @media (max-width: 820px) { .bases-hero { align-items: stretch; flex-direction: column; }.bases-hero__action { align-self: flex-start; }.bases-toolbar { grid-template-columns: 1fr; }.base-editor-form { grid-template-columns: 1fr; }.base-editor-form .base-acronym-field, .base-editor-form .admin-form__actions { grid-column: auto; } }
+.finance-invoice-alerts {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.finance-invoice-alerts .table-wrap { max-width: 100%; overflow-x: auto; }
+.finance-invoice-alerts th { white-space: nowrap; }
+.finance-invoice-alerts table { min-width: 640px; }
+.finance-invoice-alerts small { overflow-wrap: anywhere; }
