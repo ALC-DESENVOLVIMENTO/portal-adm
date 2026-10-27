@@ -7,6 +7,7 @@ import { z } from "zod";
 import { requireAuth, requireModuleAccess, requirePermission } from "../../middlewares/auth.middleware.js";
 import { prisma } from "../../lib/prisma.js";
 import { listInvoiceDeliveryAlerts } from "../../lib/invoice-delivery.js";
+import { completeManualInvoice } from "../../lib/manual-invoice.js";
 import { buildStorageObjectUrl, createStorageKey, fetchObjectBuffer, isPaymentMirrorStorageKey, uploadObject } from "../../lib/storage.js";
 import { loadDriverPdfReceivedContent } from "../../lib/driver-pdf-received-content.js";
 import {
@@ -1911,7 +1912,7 @@ router.post("/driver-pdfs/manual-nota", requirePermission("financeiro.nota.appro
     }
 
     const existing = await prisma.driverPdfReceived.findFirst({
-      where: { motoristaId: motorista.id, periodoPagamentoId: period.id, basePagamentoId: base.id, status: { in: ["nota_fiscal_recebida", "nota_fiscal_em_analise", "nota_fiscal_aprovada", "processo_concluido"] } },
+      where: { motoristaId: motorista.id, periodoPagamentoId: period.id, basePagamentoId: base.id, documentType: "nota_fiscal", status: { in: ["nota_fiscal_recebida", "nota_fiscal_em_analise", "nota_fiscal_aprovada", "processo_concluido"] } },
       select: { id: true, status: true, nomeArquivo: true }
     });
     if (existing) {
@@ -1936,43 +1937,38 @@ router.post("/driver-pdfs/manual-nota", requirePermission("financeiro.nota.appro
       return;
     }
 
-    const storageKey = createStorageKey(`notas-fiscais/periodos/${period.id}/bases/${base.id}/motoristas/${motorista.id}`, file.originalname);
-    await uploadObject({ key: storageKey, body: file.buffer, contentType: "application/pdf" });
     const linkedMirror = await prisma.uploadPdf.findFirst({
-      where: { motoristaId: motorista.id, periodoPagamentoId: period.id, basePagamentoId: base.id, documentType: { not: "nota_fiscal" }, status: { not: "removido" } },
+      where: { motoristaId: motorista.id, periodoPagamentoId: period.id, basePagamentoId: base.id, documentType: { not: "nota_fiscal" }, status: { notIn: ["removido", "substituido"] } },
       orderBy: { criadoEm: "desc" },
       select: { id: true }
     });
-    const received = await upsertDriverPdfReceivedNoteStatus({
-      uploadPdfId: linkedMirror?.id || null,
-      motoristaId: motorista.id,
-      periodId: period.id,
-      basePaymentId: base.id,
-      fileName: file.originalname,
-      storageKey,
-      mimeType: "application/pdf",
-      status: "nota_fiscal_recebida",
-      receivedAt: new Date(),
-      createdByUserId: req.auth.userId,
-      content: file.buffer
-    });
-    if (!received) {
-      res.status(500).json({ message: "NF salva no bucket, mas não foi possível criar o vínculo financeiro." });
+    if (!linkedMirror) {
+      res.status(422).json({message: "Não há espelho vigente para este motorista, período e base."});
       return;
     }
-    await prisma.logAuditoria.create({
-      data: {
-        usuarioId: req.auth.userId,
-        acao: "anexar_nota_fiscal_manual",
-        entidade: "driver_pdf_received",
-        entidadeId: received.id,
-        ipOrigem: req.ip,
-        userAgent: req.get("user-agent") || null,
-        detalhes: { fileName: file.originalname, motoristaId: motorista.id, motoristaNome: motorista.nome, periodId: period.id, periodName: period.nome, baseId: base.id, baseName: base.nome, providerCnpj: providerCnpj || null, beneficiaryCnpj: beneficiaryCnpj || null, linkedMirrorId: linkedMirror?.id || null, status: "nota_fiscal_recebida" }
-      }
+    const storageKey = createStorageKey(`notas-fiscais/periodos/${period.id}/bases/${base.id}/motoristas/${motorista.id}`, file.originalname);
+    await uploadObject({ key: storageKey, body: file.buffer, contentType: "application/pdf" });
+    const received = await completeManualInvoice({
+      uploadPdfId: linkedMirror.id,
+      motoristaId: motorista.id,
+      periodId: period.id,
+      baseId: base.id,
+      fileName: file.originalname,
+      storageKey,
+      userId: req.auth.userId,
+      content: file.buffer,
+      ip: req.ip,
+      userAgent: req.get("user-agent") || null,
+      auditDetails: {fileName: file.originalname, motoristaId: motorista.id, motoristaNome: motorista.nome,
+        periodId: period.id, periodName: period.nome, baseId: base.id, baseName: base.nome,
+        providerCnpj: providerCnpj || null, beneficiaryCnpj: beneficiaryCnpj || null}
     });
-    res.status(201).json({ message: "NF anexada ao período selecionado e enviada para conferência.", receivedId: received.id, status: received.status });
+    res.status(201).json({ message: "NF anexada e aprovada manualmente. Processo concluído.", receivedId: received.id, status: received.status });
   })().catch((error) => {
+    if (error?.statusCode === 409 || error?.statusCode === 422) {
+      res.status(error.statusCode).json({message: error.message});
+      return;
+    }
     res.status(500).json({ message: "Falha ao anexar NF manualmente.", detail: error instanceof Error ? error.message : "Erro desconhecido" });
   });
 });

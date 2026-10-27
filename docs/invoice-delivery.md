@@ -2,6 +2,14 @@
 
 O arquivo, a tentativa de envio e a decisão fiscal são registros distintos. Receber um PDF não aprova uma nota nem libera pagamento.
 
+## Anexo manual autorizado no Financeiro
+
+O endpoint manual exige `financeiro.nota.approve` e mantém as validações do arquivo, identidade/CNPJ, período e base. Após essas validações, grava a nota como `processo_concluido`, com aprovador, data e auditoria na mesma transação. O espelho é bloqueado durante a gravação para impedir dois anexos concorrentes. Isso não altera o pagamento: bloqueios e pagamentos já realizados continuam respeitados por “A pagar”. Uploads do Motorista e webhooks não recebem essa aprovação manual automaticamente.
+
+Na seleção para pagamento, o recebimento da NF não ocupa o lugar do recebimento do espelho, mesmo quando ambos apontam para o mesmo `upload_pdf_id`.
+
+O script `apps/api/scripts/repair-manual-invoices.ts` recebe IDs explícitos e é somente leitura por padrão. Com `--apply`, conclui apenas notas recebidas com arquivo preservado, auditoria de anexo manual, autor original, CNPJ conferido e vínculo consistente. Registra os valores anteriores para reversão e não altera status de pagamento. Não usar para aprovar notas recebidas pelo Motorista ou sem essas evidências.
+
 ## Contrato entre os portais
 
 - O Portal do Motorista registra uma tentativa por espelho e SHA-256 do arquivo antes da validação, preservando os bytes em `portal_administrativo.invoice_delivery_attempts`.

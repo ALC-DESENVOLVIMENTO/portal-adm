@@ -9,9 +9,19 @@ process.env.DATABASE_URL ||= "postgresql://user:password@localhost:5432/test";
 const {
   buildWorkbook,
   evaluateAptidao,
+  deriveMirrorReceipt,
   resolveBeneficiaryName,
   resolveBeneficiaryCnpj
 } = await import("./financeiro-apagar.js");
+
+test('a manual invoice linked to the mirror cannot replace the mirror receipt', () => {
+  const upload = makeUpload();
+  const mirror = {uploadPdfId: upload.id, documentType: 'espelho', status: DriverPdfReceivedStatus.motorista_visualizou, visualizadoEm: new Date()};
+  for (const status of [DriverPdfReceivedStatus.nota_fiscal_recebida, DriverPdfReceivedStatus.processo_concluido]) {
+    const note = {uploadPdfId: upload.id, documentType: 'nota_fiscal', status};
+    assert.equal(deriveMirrorReceipt(upload as never, [note, mirror] as never, new Map()), mirror);
+  }
+});
 
 function makeUpload() {
   return {

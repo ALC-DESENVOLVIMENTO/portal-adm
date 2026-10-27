@@ -340,11 +340,12 @@ function findRegistryMatch(
   return matches[0];
 }
 
-function deriveMirrorReceipt(
+export function deriveMirrorReceipt(
   upload: AptoPagamentoUpload,
   receipts: AptoPagamentoReceipt[],
   uploadById: Map<string, AptoPagamentoUpload>
 ) {
+  receipts = receipts.filter(receipt => receipt.documentType !== 'nota_fiscal' && !isActualNoteReceipt(receipt));
   return (
     receipts.find((receipt) => receipt.uploadPdfId && receipt.uploadPdfId === upload.id && (!isApprovedNoteStatus(receipt.status) || hasCompletedProcess(receipt))) ||
     receipts.find((receipt) => {
